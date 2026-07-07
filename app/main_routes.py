@@ -36,6 +36,7 @@ from app.utils import (
     ROLE_TRAINER,
     get_or_create_archiv_team,
     ARCHIV_TEAM_NAME,
+    ilike_person_name_search_expr,
     get_accessible_project_ids,
     team_member_eligible_for_new_coaching,
     team_member_eligible_for_coaching_assignment,
@@ -1507,14 +1508,21 @@ def coaching_dashboard():
 
     if search_arg:
         pattern = f"%{search_arg}%"
-        list_filters.append(
-            or_(
-                TeamMember.name.ilike(pattern),
-                User.username.ilike(pattern),
-                Coaching.coaching_subject.ilike(pattern),
-                Coaching.coach_notes.ilike(pattern),
+        member_name_clause = ilike_person_name_search_expr(TeamMember.name, search_arg)
+        coach_name_clause = ilike_person_name_search_expr(User.username, search_arg)
+        CoachTm = aliased(TeamMember)
+        coach_tm_name_clause = ilike_person_name_search_expr(CoachTm.name, search_arg)
+        search_clauses = [
+            member_name_clause,
+            coach_name_clause,
+            Coaching.coaching_subject.ilike(pattern),
+            Coaching.coach_notes.ilike(pattern),
+        ]
+        if coach_tm_name_clause is not None:
+            search_clauses.append(
+                exists().where(CoachTm.user_id == User.id, coach_tm_name_clause)
             )
-        )
+        list_filters.append(or_(*search_clauses))
 
     if not sees_all_teams:
         if my_dash_team_ids:

@@ -3,6 +3,7 @@ from datetime import datetime, date, time, timezone, timedelta
 from zoneinfo import ZoneInfo
 from flask_login import current_user
 from flask import flash, redirect, url_for
+from sqlalchemy import and_, or_
 from sqlalchemy.exc import SQLAlchemyError
 from app import db
 from app.models import Team, Project, Role, TeamMember, User, LeitfadenItem, CoachingThemaItem, CoachingBogenLayout
@@ -19,6 +20,24 @@ ROLE_ABTEILUNGSLEITER = 'Abteilungsleiter'
 ROLE_MITARBEITER = 'Mitarbeiter'
 
 ARCHIV_TEAM_NAME = "ARCHIV"
+
+
+def ilike_person_name_search_expr(column, search_arg):
+    """
+    Flexible person-name filter: full phrase, reversed word order, or all tokens present.
+    E.g. 'Max Mustermann' matches 'Mustermann Max' and 'Max Mustermann'.
+    """
+    raw = (search_arg or '').strip()
+    if not raw:
+        return None
+    clauses = [column.ilike(f'%{raw}%')]
+    tokens = [t for t in raw.split() if t]
+    if len(tokens) >= 2:
+        reversed_phrase = ' '.join(reversed(tokens))
+        if reversed_phrase.lower() != raw.lower():
+            clauses.append(column.ilike(f'%{reversed_phrase}%'))
+        clauses.append(and_(*[column.ilike(f'%{tok}%') for tok in tokens]))
+    return or_(*clauses)
 
 
 def leitfaden_items_for_project(project_id):
