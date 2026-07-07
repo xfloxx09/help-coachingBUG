@@ -1291,6 +1291,13 @@ def _assigned_coachings_scope_query(project_filter_id=None):
     return q
 
 
+def _assigned_list_default_sort(tab_active):
+    """Default table sort: newest Start first on current/completed tabs."""
+    if tab_active in ('current', 'completed'):
+        return 'start', 'desc'
+    return 'deadline', 'asc'
+
+
 def _gesamtbericht_project_bar_extra(
     tab_active,
     team_filter,
@@ -1313,9 +1320,10 @@ def _gesamtbericht_project_bar_extra(
         d['search'] = search_term
     if project_leader_filter:
         d['project_leader'] = project_leader_filter
-    if sort_by != 'deadline':
+    def_sort_by, def_sort_dir = _assigned_list_default_sort(tab_active)
+    if sort_by != def_sort_by:
         d['sort_by'] = sort_by
-    if sort_dir != 'asc':
+    if sort_dir != def_sort_dir:
         d['sort_dir'] = sort_dir
     return d
 
@@ -4037,10 +4045,11 @@ def assigned_coachings():
     coach_filter = request.args.get('coach', type=int)
     member_filter = request.args.get('member', type=int)
     search_term = (request.args.get('search') or '').strip()
-    sort_by = request.args.get('sort_by', 'deadline')
-    sort_dir = request.args.get('sort_dir', 'asc')
+    def_sort_by, def_sort_dir = _assigned_list_default_sort(tab_active)
+    sort_by = request.args.get('sort_by', def_sort_by)
+    sort_dir = request.args.get('sort_dir', def_sort_dir)
     if sort_dir not in ('asc', 'desc'):
-        sort_dir = 'asc'
+        sort_dir = def_sort_dir
 
     all_teams = _teams_for_assigned_coaching_filters(project_id_single=project_id)
     visible_team_ids = [t.id for t in all_teams]
@@ -4165,9 +4174,9 @@ def assigned_coachings():
         project_bar_extra_hidden['member'] = member_filter
     if search_term:
         project_bar_extra_hidden['search'] = search_term
-    if sort_by not in ('deadline',):
+    if sort_by != def_sort_by:
         project_bar_extra_hidden['sort_by'] = sort_by
-    if sort_dir != 'asc':
+    if sort_dir != def_sort_dir:
         project_bar_extra_hidden['sort_dir'] = sort_dir
 
     return render_template(
@@ -4400,10 +4409,11 @@ def assigned_coachings_gesamtbericht():
     coach_filter = request.args.get('coach', type=int)
     member_filter = request.args.get('member', type=int)
     search_term = (request.args.get('search') or '').strip()
-    sort_by = request.args.get('sort_by', 'deadline')
-    sort_dir = request.args.get('sort_dir', 'asc')
+    def_sort_by, def_sort_dir = _assigned_list_default_sort(tab_active)
+    sort_by = request.args.get('sort_by', def_sort_by)
+    sort_dir = request.args.get('sort_dir', def_sort_dir)
     if sort_dir not in ('asc', 'desc'):
-        sort_dir = 'asc'
+        sort_dir = def_sort_dir
 
     acc = get_accessible_project_ids()
     assigned_tabs_project_id = get_visible_project_id()
