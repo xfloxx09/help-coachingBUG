@@ -4556,6 +4556,8 @@ def assigned_coachings_gesamtbericht():
     elif sort_by == 'project_name':
         q = q.join(Project, Team.project_id == Project.id)
         order_expr = Project.name
+    elif sort_by == 'start':
+        order_expr = AssignedCoaching.created_at
     else:
         order_expr = AssignedCoaching.deadline
 

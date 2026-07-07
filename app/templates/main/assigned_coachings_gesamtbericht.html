@@ -138,6 +138,7 @@
         <table class="table table-striped table-dark table-hover mb-0">
             <thead>
                 <tr>
+                    <th>Start <a class="sort-link" href="{{ url_for('main.assigned_coachings_gesamtbericht', status=tab_active, project=project_filter or None, project_leader=project_leader_filter or None, team=team_filter or None, coach=coach_filter or None, member=member_filter or None, search=search_term or None, sort_by='start', sort_dir='asc' if sort_by != 'start' or sort_dir == 'desc' else 'desc') }}"><i class="fas fa-sort"></i></a></th>
                     <th>Deadline <a class="sort-link" href="{{ url_for('main.assigned_coachings_gesamtbericht', status=tab_active, project=project_filter or None, project_leader=project_leader_filter or None, team=team_filter or None, coach=coach_filter or None, member=member_filter or None, search=search_term or None, sort_by='deadline', sort_dir='asc' if sort_by != 'deadline' or sort_dir == 'desc' else 'desc') }}"><i class="fas fa-sort"></i></a></th>
                     <th>Projekt <a class="sort-link" href="{{ url_for('main.assigned_coachings_gesamtbericht', status=tab_active, project=project_filter or None, project_leader=project_leader_filter or None, team=team_filter or None, coach=coach_filter or None, member=member_filter or None, search=search_term or None, sort_by='project_name', sort_dir='asc' if sort_by != 'project_name' or sort_dir == 'desc' else 'desc') }}"><i class="fas fa-sort"></i></a></th>
                     <th>Mitglied <a class="sort-link" href="{{ url_for('main.assigned_coachings_gesamtbericht', status=tab_active, project=project_filter or None, project_leader=project_leader_filter or None, team=team_filter or None, coach=coach_filter or None, member=member_filter or None, search=search_term or None, sort_by='member_name', sort_dir='asc' if sort_by != 'member_name' or sort_dir == 'desc' else 'desc') }}"><i class="fas fa-sort"></i></a></th>
@@ -152,6 +153,7 @@
             <tbody>
                 {% for assignment in assignments.items %}
                 <tr>
+                    <td>{{ assignment.created_at|athens_time('%d.%m.%Y') if assignment.created_at else '—' }}</td>
                     <td>{{ assignment.deadline|athens_time('%d.%m.%Y') }}</td>
                     <td>{{ assignment.team_member.team.project.name if assignment.team_member.team and assignment.team_member.team.project else '—' }}</td>
                     <td>{{ assignment.team_member.name }} <span class="text-muted">({{ assignment.team_member.team.name }})</span></td>
