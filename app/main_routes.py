@@ -4196,7 +4196,11 @@ def create_assigned_coaching():
     selected_member_ids = _member_ids_from_assign_request()
     tm_for_coaches = selected_member_ids[0] if len(selected_member_ids) == 1 else None
 
-    form = AssignedCoachingForm(allowed_project_ids=[project_id], team_member_id=tm_for_coaches)
+    form = AssignedCoachingForm(
+        allowed_project_ids=[project_id],
+        team_member_id=tm_for_coaches,
+        team_member_ids=selected_member_ids if len(selected_member_ids) > 1 else None,
+    )
     if request.method == 'GET' and len(selected_member_ids) == 1:
         form.team_member_id.data = selected_member_ids[0]
 
@@ -4301,7 +4305,7 @@ def api_assignment_coaches():
     project_id = get_visible_project_id()
     if not project_id:
         return jsonify([])
-    mids = request.args.getlist('team_member_ids')
+    mids = request.args.getlist('team_member_ids') or request.args.getlist('team_member_ids[]')
     parsed = []
     for raw in mids:
         for part in str(raw).split(','):

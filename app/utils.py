@@ -345,6 +345,11 @@ def user_eligible_assignable_coach(user, project_id, team_member_id=None, for_as
         for tm2 in user.team_members:
             if tm2.team and live_proj(tm2.team):
                 allowed_team_ids.add(tm2.team_id)
+        tid_leader = getattr(user, 'team_id_if_leader', None)
+        if tid_leader:
+            t_leader = db.session.get(Team, tid_leader)
+            if live_proj(t_leader):
+                allowed_team_ids.add(t_leader.id)
         if tm_coachee.team_id not in allowed_team_ids:
             return False
 

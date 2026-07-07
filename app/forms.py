@@ -15,6 +15,7 @@ from app.utils import (
     ROLE_BETRIEBSLEITER,
     ROLE_ABTEILUNGSLEITER,
     users_for_assignment_coach_dropdown,
+    users_for_assignment_coach_dropdown_multi,
 )
 
 
@@ -446,7 +447,7 @@ class AssignedCoachingForm(FlaskForm):
     desired_performance_note = IntegerField('Gewünschte Performance Note (0-10)', validators=[Optional(), NumberRange(min=0, max=10)], default=None)
     submit = SubmitField('Coaching zuweisen')
 
-    def __init__(self, allowed_project_ids=None, team_member_id=None, *args, **kwargs):
+    def __init__(self, allowed_project_ids=None, team_member_id=None, team_member_ids=None, *args, **kwargs):
         super(AssignedCoachingForm, self).__init__(*args, **kwargs)
         self.team_member_active_assignment_counts = {}
         if allowed_project_ids:
@@ -475,7 +476,15 @@ class AssignedCoachingForm(FlaskForm):
                 for m in members
             ]
 
-            coaches = users_for_assignment_coach_dropdown(project_id, team_member_id)
+            selected_ids = [int(x) for x in (team_member_ids or []) if x]
+            if not selected_ids and team_member_id:
+                selected_ids = [int(team_member_id)]
+            if len(selected_ids) > 1:
+                coaches = users_for_assignment_coach_dropdown_multi(project_id, selected_ids)
+            elif len(selected_ids) == 1:
+                coaches = users_for_assignment_coach_dropdown(project_id, selected_ids[0])
+            else:
+                coaches = users_for_assignment_coach_dropdown(project_id, None)
             self.coach_id.choices = [(u.id, f"{u.coach_display_name} ({u.role_name})") for u in coaches]
 
 
