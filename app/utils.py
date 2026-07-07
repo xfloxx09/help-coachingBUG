@@ -5,8 +5,20 @@ from flask_login import current_user
 from flask import flash, redirect, url_for
 from sqlalchemy import and_, or_
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import joinedload, selectinload
 from app import db
-from app.models import Team, Project, Role, TeamMember, User, LeitfadenItem, CoachingThemaItem, CoachingBogenLayout
+from app.models import (
+    Team,
+    Project,
+    Role,
+    TeamMember,
+    User,
+    Permission,
+    role_permissions,
+    LeitfadenItem,
+    CoachingThemaItem,
+    CoachingBogenLayout,
+)
 
 ROLE_ADMIN = 'Admin'
 ROLE_BETRIEBSLEITER = 'Betriebsleiter'
@@ -246,6 +258,77 @@ def _archiv_team_id():
     return t.id if t else None
 
 
+def _teams_by_id_for_leader_refs(users):
+    """Batch-load teams referenced by user.team_id_if_leader."""
+    ids = {u.team_id_if_leader for u in users if getattr(u, 'team_id_if_leader', None)}
+    if not ids:
+        return {}
+    return {t.id: t for t in Team.query.filter(Team.id.in_(ids)).all()}
+
+
+def _build_assignment_coach_eval_context(project_id, team_member_ids=None, for_assignment=True):
+    """Preload coachees (with team + leaders) once for assignment coach eligibility checks."""
+    ids = [int(x) for x in (team_member_ids or []) if x]
+    coachees_by_id = {}
+    if ids:
+        for coachee in (
+            TeamMember.query.options(
+                joinedload(TeamMember.team).selectinload(Team.leaders),
+            )
+            .filter(TeamMember.id.in_(ids))
+            .all()
+        ):
+            coachees_by_id[coachee.id] = coachee
+    return {
+        'project_id': project_id,
+        'for_assignment': for_assignment,
+        'archiv_id': _archiv_team_id(),
+        'coachees_by_id': coachees_by_id,
+        'teams_by_id': {},
+    }
+
+
+def _candidate_assignment_coach_users():
+    """Users whose role may be chosen as coach (excludes Admin). Single query + eager loads."""
+    return (
+        User.query.options(
+            joinedload(User.role).selectinload(Role.permissions),
+            selectinload(User.teams_led),
+            selectinload(User.team_members).joinedload(TeamMember.team),
+            selectinload(User.projects),
+        )
+        .join(Role, User.role_id == Role.id)
+        .join(role_permissions, Role.id == role_permissions.c.role_id)
+        .join(Permission, Permission.id == role_permissions.c.permission_id)
+        .filter(
+            Permission.name.in_(('coach', 'accept_assigned_coaching')),
+            Role.name != ROLE_ADMIN,
+        )
+        .distinct()
+        .all()
+    )
+
+
+def _coachee_for_assignment_eval(ctx, team_member_id):
+    if not team_member_id:
+        return None
+    if ctx:
+        coachee = ctx.get('coachees_by_id', {}).get(team_member_id)
+        if coachee is not None:
+            return coachee
+    return db.session.get(TeamMember, team_member_id)
+
+
+def _team_for_leader_ref(ctx, team_id):
+    if not team_id:
+        return None
+    if ctx:
+        team = ctx.get('teams_by_id', {}).get(team_id)
+        if team is not None:
+            return team
+    return db.session.get(Team, team_id)
+
+
 def _team_usable_for_coach_link(team, project_id, archiv_id, for_assignment=False):
     """Project team usable when linking coaches to coachees (add coaching / assignments)."""
     if not team or team.project_id != project_id:
@@ -266,7 +349,7 @@ def _is_live_team_in_project(team, project_id, archiv_id):
     return _team_usable_for_coach_link(team, project_id, archiv_id, for_assignment=False)
 
 
-def user_eligible_assignable_coach(user, project_id, team_member_id=None, for_assignment=False):
+def user_eligible_assignable_coach(user, project_id, team_member_id=None, for_assignment=False, ctx=None):
     """
     Users who may be chosen as coach when creating an AssignedCoaching in project_id.
 
@@ -275,6 +358,7 @@ def user_eligible_assignable_coach(user, project_id, team_member_id=None, for_as
     ``coach_own_team_only`` requires a selected coachee on the same live team / led team.
 
     ``for_assignment``: coachee teams may be inactive if marked visible for assignment in admin.
+    Pass ``ctx`` from ``_build_assignment_coach_eval_context`` to avoid repeated DB lookups.
     """
     if not user or not user.role:
         return False
@@ -283,7 +367,7 @@ def user_eligible_assignable_coach(user, project_id, team_member_id=None, for_as
     if user.role_name == ROLE_ADMIN:
         return False
 
-    archiv_id = _archiv_team_id()
+    archiv_id = ctx['archiv_id'] if ctx else _archiv_team_id()
     pids = {project_id}
 
     def live_proj(team):
@@ -310,13 +394,13 @@ def user_eligible_assignable_coach(user, project_id, team_member_id=None, for_as
 
     tid = getattr(user, 'team_id_if_leader', None)
     if tid:
-        t = db.session.get(Team, tid)
+        t = _team_for_leader_ref(ctx, tid)
         if live_proj(t):
             linked = True
 
     leader_of_target = False
     if team_member_id:
-        tm_coachee = db.session.get(TeamMember, team_member_id)
+        tm_coachee = _coachee_for_assignment_eval(ctx, team_member_id)
         if (
             tm_coachee
             and tm_coachee.team
@@ -343,7 +427,7 @@ def user_eligible_assignable_coach(user, project_id, team_member_id=None, for_as
             )
             tid2 = getattr(user, 'team_id_if_leader', None)
             if tid2:
-                t2 = db.session.get(Team, tid2)
+                t2 = _team_for_leader_ref(ctx, tid2)
                 if live_proj(t2):
                     has_other = True
             if not has_other:
@@ -352,7 +436,7 @@ def user_eligible_assignable_coach(user, project_id, team_member_id=None, for_as
     if user.has_permission('coach_own_team_only'):
         if not team_member_id:
             return False
-        tm_coachee = db.session.get(TeamMember, team_member_id)
+        tm_coachee = _coachee_for_assignment_eval(ctx, team_member_id)
         if not tm_coachee or not tm_coachee.team_id:
             return False
         if not live_proj(tm_coachee.team):
@@ -366,7 +450,7 @@ def user_eligible_assignable_coach(user, project_id, team_member_id=None, for_as
                 allowed_team_ids.add(tm2.team_id)
         tid_leader = getattr(user, 'team_id_if_leader', None)
         if tid_leader:
-            t_leader = db.session.get(Team, tid_leader)
+            t_leader = _team_for_leader_ref(ctx, tid_leader)
             if live_proj(t_leader):
                 allowed_team_ids.add(t_leader.id)
         if tm_coachee.team_id not in allowed_team_ids:
@@ -375,14 +459,24 @@ def user_eligible_assignable_coach(user, project_id, team_member_id=None, for_as
     return True
 
 
+def _assignment_coach_dropdown_sorted(users):
+    return sorted(users, key=lambda u: (u.coach_display_name or '').lower())
+
+
 def users_for_assignment_coach_dropdown(project_id, team_member_id=None):
     """Sorted users who may receive a coaching assignment in this project."""
+    ctx = _build_assignment_coach_eval_context(
+        project_id,
+        [team_member_id] if team_member_id else [],
+        for_assignment=True,
+    )
+    candidates = _candidate_assignment_coach_users()
+    ctx['teams_by_id'] = _teams_by_id_for_leader_refs(candidates)
     eligible = [
-        u for u in User.query.order_by(User.username).all()
-        if user_eligible_assignable_coach(u, project_id, team_member_id, for_assignment=True)
+        u for u in candidates
+        if user_eligible_assignable_coach(u, project_id, team_member_id, for_assignment=True, ctx=ctx)
     ]
-    eligible.sort(key=lambda u: (u.coach_display_name or '').lower())
-    return eligible
+    return _assignment_coach_dropdown_sorted(eligible)
 
 
 def users_for_assignment_coach_dropdown_multi(project_id, team_member_ids):
@@ -390,20 +484,26 @@ def users_for_assignment_coach_dropdown_multi(project_id, team_member_ids):
     ids = [int(x) for x in (team_member_ids or []) if x]
     if not ids:
         return users_for_assignment_coach_dropdown(project_id, None)
-    by_id = {}
+    if len(ids) == 1:
+        return users_for_assignment_coach_dropdown(project_id, ids[0])
+
+    ctx = _build_assignment_coach_eval_context(project_id, ids, for_assignment=True)
+    candidates = _candidate_assignment_coach_users()
+    ctx['teams_by_id'] = _teams_by_id_for_leader_refs(candidates)
+    by_id = {u.id: u for u in candidates}
     common = None
     for mid in ids:
-        coaches = users_for_assignment_coach_dropdown(project_id, mid)
-        cids = {u.id for u in coaches}
+        cids = {
+            u.id for u in candidates
+            if user_eligible_assignable_coach(u, project_id, mid, for_assignment=True, ctx=ctx)
+        }
         if common is None:
             common = cids
         else:
             common &= cids
-        for u in coaches:
-            by_id[u.id] = u
     if not common:
         return []
-    return [by_id[i] for i in sorted(common, key=lambda uid: (by_id[uid].coach_display_name or '').lower())]
+    return _assignment_coach_dropdown_sorted([by_id[i] for i in common])
 
 
 def role_required(allowed_roles):

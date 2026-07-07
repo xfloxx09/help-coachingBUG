@@ -43,6 +43,8 @@ from app.utils import (
     user_eligible_assignable_coach,
     users_for_assignment_coach_dropdown,
     users_for_assignment_coach_dropdown_multi,
+    _build_assignment_coach_eval_context,
+    _teams_by_id_for_leader_refs,
     workshop_individual_rating_from_request,
     leitfaden_items_for_project,
     leitfaden_items_for_coaching_edit,
@@ -4242,7 +4244,14 @@ def create_assigned_coaching():
             flash('Bitte mindestens ein Teammitglied auswählen.', 'danger')
             return redirect(url_for('main.create_assigned_coaching', project=project_id))
 
-        coach_u = User.query.get(form.coach_id.data)
+        coach_u = (
+            User.query.options(
+                joinedload(User.role).selectinload(Role.permissions),
+                selectinload(User.teams_led),
+                selectinload(User.team_members).joinedload(TeamMember.team),
+                selectinload(User.projects),
+            ).get(form.coach_id.data)
+        )
         d = form.deadline.data
         dl = datetime(d.year, d.month, d.day, 23, 59, 59)
         note_raw = request.form.get('current_note')
@@ -4251,10 +4260,22 @@ def create_assigned_coaching():
         except (TypeError, ValueError):
             cur_note = None
 
+        assign_ctx = _build_assignment_coach_eval_context(project_id, submit_ids, for_assignment=True)
+        if coach_u:
+            assign_ctx['teams_by_id'] = _teams_by_id_for_leader_refs([coach_u])
+
+        members_by_id = {
+            m.id: m for m in (
+                TeamMember.query.options(joinedload(TeamMember.team))
+                .filter(TeamMember.id.in_(submit_ids))
+                .all()
+            )
+        }
+
         created = 0
         skipped = 0
         for mid in submit_ids:
-            tm_as = TeamMember.query.options(joinedload(TeamMember.team)).get(mid)
+            tm_as = members_by_id.get(mid)
             if not tm_as or not tm_as.team or tm_as.team.project_id != project_id:
                 skipped += 1
                 continue
@@ -4262,7 +4283,7 @@ def create_assigned_coaching():
                 skipped += 1
                 continue
             if not coach_u or not user_eligible_assignable_coach(
-                coach_u, project_id, mid, for_assignment=True
+                coach_u, project_id, mid, for_assignment=True, ctx=assign_ctx
             ):
                 skipped += 1
                 continue
@@ -4325,10 +4346,14 @@ def api_assignment_coaches():
         if mid:
             parsed = [mid]
     valid = []
-    for mid in parsed:
-        m = TeamMember.query.get(mid)
-        if m and m.team and m.team.project_id == project_id:
-            valid.append(mid)
+    if parsed:
+        valid = [
+            m.id for m in (
+                TeamMember.query.join(Team, TeamMember.team_id == Team.id)
+                .filter(TeamMember.id.in_(parsed), Team.project_id == project_id)
+                .all()
+            )
+        ]
     if len(valid) > 1:
         coaches = users_for_assignment_coach_dropdown_multi(project_id, valid)
     elif len(valid) == 1:

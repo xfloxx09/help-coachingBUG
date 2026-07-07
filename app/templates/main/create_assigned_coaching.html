@@ -92,17 +92,22 @@ $(document).ready(function() {
             }).join('&');
             url += (url.indexOf('?') >= 0 ? '&' : '?') + qs;
         }
-        $.getJSON(url).done(function(rows) {
-            var $c = $('#coach_id');
-            var prev = $c.val();
-            $c.empty();
-            rows.forEach(function(r) {
-                $c.append($('<option/>', { value: r.id, text: r.label }));
+        if (reloadAssignmentCoaches._timer) {
+            clearTimeout(reloadAssignmentCoaches._timer);
+        }
+        reloadAssignmentCoaches._timer = setTimeout(function() {
+            $.getJSON(url).done(function(rows) {
+                var $c = $('#coach_id');
+                var prev = $c.val();
+                $c.empty();
+                rows.forEach(function(r) {
+                    $c.append($('<option/>', { value: r.id, text: r.label }));
+                });
+                if (prev && $c.find('option[value="' + prev + '"]').length) {
+                    $c.val(prev);
+                }
             });
-            if (prev && $c.find('option[value="' + prev + '"]').length) {
-                $c.val(prev);
-            }
-        });
+        }, 300);
     }
 
     function renderChips() {
