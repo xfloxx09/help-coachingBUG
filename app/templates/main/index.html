@@ -750,7 +750,7 @@
         <div class="col-md-auto">
             <div class="form-group mr-2 mb-0">
                 <label for="project_filter">Projekt:</label>
-                <select name="project" id="project_filter" class="form-control custom-select form-control-sm dash-filter-control" onchange="var tf=document.getElementById('team_filter'); if(tf){tf.value='all';} this.form.submit();">
+                <select name="project" id="project_filter" class="form-control custom-select form-control-sm dash-filter-control" onchange="var tf=document.getElementById('team_filter'); var mf=document.getElementById('member_filter'); if(tf){tf.value='all';} if(mf){mf.value='';} this.form.submit();">
                     {% if show_global_all_projects_option %}
                         {% if coaching_dashboard_project_all_is_blank %}
                         <option value="" {% if current_project_filter is none %}selected{% endif %}>Alle Projekte</option>
@@ -779,14 +779,23 @@
                 </select>
             </div>
         </div>
+        <div class="col-md-auto">
+            <div class="form-group mr-2 mb-0">
+                <label for="member_filter">Mitarbeiter:</label>
+                <select name="member_id" id="member_filter" class="form-control custom-select form-control-sm dash-filter-control"
+                        {% if current_team_id_filter == 'all' or not current_team_id_filter %}disabled{% endif %}>
+                    <option value="">{% if current_team_id_filter == 'all' or not current_team_id_filter %}Zuerst Team wählen{% else %}Alle Mitarbeiter{% endif %}</option>
+                    {% for m in dashboard_members_for_filter|default([]) %}
+                    <option value="{{ m.id }}" {% if current_member_id_filter == m.id %}selected{% endif %}>{{ m.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
         {% if current_search_term %}
         <input type="hidden" name="search" value="{{ current_search_term }}">
         {% endif %}
         {% if cal_date_filter is defined and cal_date_filter %}
         <input type="hidden" name="cal_date" value="{{ cal_date_filter }}">
-        {% endif %}
-        {% if dashboard_member_id is defined and dashboard_member_id %}
-        <input type="hidden" name="member_id" value="{{ dashboard_member_id }}">
         {% endif %}
         {% if show_chart_group_toggle %}
         <input type="hidden" name="chart_group_coachings" id="chart_group_coachings" value="{{ chart_group_coachings }}">
@@ -818,6 +827,13 @@ document.addEventListener('DOMContentLoaded', function () {
     if (periodSel) {
         periodSel.addEventListener('change', toggleVonBis);
         toggleVonBis();
+    }
+    var teamSel = document.getElementById('team_filter');
+    var memberSel = document.getElementById('member_filter');
+    if (teamSel && memberSel) {
+        teamSel.addEventListener('change', function () {
+            memberSel.value = '';
+        });
     }
 });
 </script>

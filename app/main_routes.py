@@ -1011,6 +1011,53 @@ def _dashboard_my_team_ids():
     return out
 
 
+def _coaching_dashboard_team_in_scope(
+    team_id,
+    accessible,
+    dashboard_project_id,
+    sees_all_teams,
+    my_dash_team_ids,
+):
+    """True if team_id is a valid, visible coaching-dashboard team filter target."""
+    team_row = Team.query.filter_by(id=team_id).first()
+    if (
+        not team_row
+        or team_row.name == ARCHIV_TEAM_NAME
+        or not team_row.active_for_coaching
+        or dashboard_project_id == -1
+    ):
+        return False
+    if accessible is not None and (not accessible or team_row.project_id not in accessible):
+        return False
+    if dashboard_project_id is not None and team_row.project_id != dashboard_project_id:
+        return False
+    if not sees_all_teams and (not my_dash_team_ids or team_row.id not in my_dash_team_ids):
+        return False
+    return True
+
+
+def _coaching_dashboard_members_for_filter(
+    team_arg,
+    accessible,
+    dashboard_project_id,
+    sees_all_teams,
+    my_dash_team_ids,
+):
+    """Team members for Mitarbeiter dropdown when a team is selected."""
+    if team_arg == 'all' or not str(team_arg).isdigit():
+        return []
+    tid = int(team_arg)
+    if not _coaching_dashboard_team_in_scope(
+        tid, accessible, dashboard_project_id, sees_all_teams, my_dash_team_ids
+    ):
+        return []
+    return (
+        TeamMember.query.filter(TeamMember.team_id == tid)
+        .order_by(TeamMember.name)
+        .all()
+    )
+
+
 def _coaching_dashboard_resolve_member_filter(
     member_id,
     accessible,
@@ -1482,18 +1529,14 @@ def coaching_dashboard():
 
     if team_arg != 'all' and team_arg.isdigit():
         tid = int(team_arg)
-        team_row = Team.query.filter_by(id=tid).first()
-        if (
-            team_row
-            and team_row.name != ARCHIV_TEAM_NAME
-            and team_row.active_for_coaching
-            and dashboard_project_id != -1
-            and (accessible is None or team_row.project_id in accessible)
-            and (dashboard_project_id is None or team_row.project_id == dashboard_project_id)
+        if _coaching_dashboard_team_in_scope(
+            tid, accessible, dashboard_project_id, sees_all_teams, my_dash_team_ids
         ):
             scope_filters.append(Team.id == tid)
 
     member_arg = request.args.get('member_id', type=int)
+    if team_arg == 'all':
+        member_arg = None
     dashboard_member = None
     if member_arg:
         dashboard_member = _coaching_dashboard_resolve_member_filter(
@@ -1632,6 +1675,14 @@ def coaching_dashboard():
     else:
         all_teams_for_filter = team_dropdown_q.order_by(Team.name).all()
 
+    dashboard_members_for_filter = _coaching_dashboard_members_for_filter(
+        team_arg,
+        accessible,
+        dashboard_project_id,
+        sees_all_teams,
+        my_dash_team_ids,
+    )
+
     # Month options
     now = datetime.now(timezone.utc)
     current_year = now.year
@@ -1755,6 +1806,8 @@ def coaching_dashboard():
                            coaching_dashboard_search_reset_href=coaching_dashboard_search_reset_href,
                            dashboard_member_id=dashboard_member.id if dashboard_member else None,
                            dashboard_member_name=dashboard_member.name if dashboard_member else None,
+                           dashboard_members_for_filter=dashboard_members_for_filter,
+                           current_member_id_filter=dashboard_member.id if dashboard_member else None,
                            coaching_dashboard_date_from=date_from_str if period_arg == 'vonbis' else '',
                            coaching_dashboard_date_to=date_to_str if period_arg == 'vonbis' else '',
                            config=current_app.config)
