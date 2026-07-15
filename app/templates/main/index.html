@@ -782,8 +782,7 @@
         <div class="col-md-auto">
             <div class="form-group mr-2 mb-0">
                 <label for="member_filter">Mitarbeiter:</label>
-                <select name="member_id" id="member_filter" class="form-control custom-select form-control-sm dash-filter-control"
-                        {% if current_team_id_filter == 'all' or not current_team_id_filter %}disabled{% endif %}>
+                <select name="member_id" id="member_filter" class="form-control custom-select form-control-sm dash-filter-control">
                     <option value="">{% if current_team_id_filter == 'all' or not current_team_id_filter %}Zuerst Team wählen{% else %}Alle Mitarbeiter{% endif %}</option>
                     {% for m in dashboard_members_for_filter|default([]) %}
                     <option value="{{ m.id }}" {% if current_member_id_filter == m.id %}selected{% endif %}>{{ m.name }}</option>
